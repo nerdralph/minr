@@ -1,5 +1,6 @@
 # gominer
 GPU miner for siacoin in go
+Fork of github.com/SiaMining/gominer with poolmod3 patch merged
 
 All available opencl capable GPU's are detected and used in parallel.
 
@@ -7,12 +8,12 @@ All available opencl capable GPU's are detected and used in parallel.
 ## Installation from source
 
 ### Prerequisites
-* go version 1.4.2 or above (earlier version might work or not), check with `go version`
+* golang (NOT gccgo) version 1.4.2 or above (earlier version might work or not), check with `go version`
 * opencl libraries on the library path
 * gcc
 
 ```
-go get github.com/robvanmieghem/gominer
+go get github.com/nerdralph/gominer-nr
 ```
 
 ## Run

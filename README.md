@@ -14,8 +14,11 @@ All available opencl capable GPU's are detected and used in parallel.
 
 Ubuntu 14.04 standard repositories only have golang 1.3, so it is recommended
 to install version 1.5.1 from the ethereum ppa.
-```
 
+```
+add-apt-repository -y ppa:ethereum/ethereum
+sudo apt-get update
+apt-get install -y git ocl-icd-libopencl1 opencl-headers golang
 go get github.com/nerdralph/gominer-nr
 ```
 

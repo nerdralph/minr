@@ -8,11 +8,14 @@ All available opencl capable GPU's are detected and used in parallel.
 ## Installation from source
 
 ### Prerequisites
-* golang (NOT gccgo) version 1.4.2 or above (earlier version might work or not), check with `go version`
+* golang (NOT gccgo) version 1.4.2 or above, check with `go version`
 * opencl libraries on the library path
 * gcc
 
+Ubuntu 14.04 standard repositories only have golang 1.3, so it is recommended
+to install version 1.5.1 from the ethereum ppa.
 ```
+
 go get github.com/nerdralph/gominer-nr
 ```
 

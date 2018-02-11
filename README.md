@@ -1,2 +1,0 @@
-# minr
-optimized ethereum miner

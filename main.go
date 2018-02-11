@@ -121,9 +121,6 @@ func main() {
 
 	siad := NewSiadClient(*siadHost, *queryString)
 
-	if *useCPU {
-		devicesTypesForMining = cl.DeviceTypeAll
-	}
 	globalItemSize := int(math.Exp2(float64(intensity)))
 
 	platforms, err := cl.GetPlatforms()
@@ -178,7 +175,7 @@ func main() {
 	}
 
 	//Start fetching work
-	go createWork(siad, workChannels, *secondsOfWorkPerRequestedHeader, globalItemSize)
+	go createWork(siad, workChannels, 1, globalItemSize)
 
 	//Start printing out the hashrates of the different gpu's
 	hashRateReports := make([]float64, nrOfMiningDevices)

@@ -1,25 +1,13 @@
-# gominer
-GPU miner for siacoin in go
-Fork of github.com/SiaMining/gominer with poolmod3 patch merged
-
-All available opencl capable GPU's are detected and used in parallel.
-
-
-## Installation from source
+# minr
+GPU miner for ethereum, optimized for AMD GPUs. 
 
 ### Prerequisites
-* golang (NOT gccgo) version 1.4.2 or above, check with `go version`
+* gol version 1.6.0 or above, check with `go version`
 * opencl libraries on the library path
-* gcc
-
-Ubuntu 14.04 standard repositories only have golang 1.3, so it is recommended
-to install version 1.5.1 from the ethereum ppa.
 
 ```
-add-apt-repository -y ppa:ethereum/ethereum
-sudo apt-get update
 apt-get install -y git ocl-icd-libopencl1 opencl-headers golang
-go get github.com/nerdralph/gominer-nr
+go get github.com/nerdralph/minr
 ```
 
 ## Run
@@ -30,7 +18,7 @@ gominer
 Usage:
 ```
   -H string
-    	siad host and port (default "localhost:9980")
+    	host and port (default "localhost:9980")
   -Q string
     	Query string
   -I int

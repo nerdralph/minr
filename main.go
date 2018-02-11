@@ -14,7 +14,7 @@ import (
 )
 
 //Version is the released version string of gominer
-var Version = "0.5-poolmod3"
+var Version = "0.0.0"
 
 var intensity = 28
 var devicesTypesForMining = cl.DeviceTypeGPU
@@ -107,16 +107,15 @@ func submitSolutions(siad HeaderReporter, solutionChannel chan []byte) {
 
 func main() {
 	printVersion := flag.Bool("v", false, "Show version and exit")
-	useCPU := flag.Bool("cpu", false, "If set, also use the CPU for mining, only GPU's are used by default")
 	flag.IntVar(&intensity, "I", intensity, "Intensity")
-	siadHost := flag.String("H", "localhost:9980", "siad host and port")
-	secondsOfWorkPerRequestedHeader := flag.Int("S", 10, "Time between calls to siad")
+	siadHost := flag.String("H", "localhost:9980", "host and port")
+//	secondsOfWorkPerRequestedHeader := flag.Int("S", 10, "Time between calls to siad")
 	excludedGPUs := flag.String("E", "", "Exclude GPU's: comma separated list of devicenumbers")
-	queryString := flag.String("Q", "", "Query string")
+	queryString := flag.String("A", "", "address or pool login")
 	flag.Parse()
 
 	if *printVersion {
-		fmt.Println("gominer version", Version)
+		fmt.Println("minr version", Version)
 		os.Exit(0)
 	}
 

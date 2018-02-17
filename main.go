@@ -4,8 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math"
-	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -17,9 +15,7 @@ import (
 //Version is the released version string of gominer
 const Version = "0.0.0"
 
-var intensity = 28
-
-func getHeader(siad *SiadClient, longpoll bool) (header []byte, err error) {
+func getHeader(siad *Client, longpoll bool) (header []byte, err error) {
 	target, header, err := siad.GetHeaderForWork(longpoll)
 	if err != nil {
 		log.Println("ERROR fetching work -", err)
@@ -32,7 +28,7 @@ func getHeader(siad *SiadClient, longpoll bool) (header []byte, err error) {
 	return
 }
 
-func startLongPolling(siad *SiadClient) (c chan []byte) {
+func startLongPolling(siad *Client) (c chan []byte) {
 	c = make(chan []byte)
 	go func () {
 		for {
@@ -47,7 +43,7 @@ func startLongPolling(siad *SiadClient) (c chan []byte) {
 	return
 }
 
-func createWork(siad *SiadClient, workChannels []chan *MiningWork, secondsOfWorkPerRequestedHeader int, globalItemSize int) {
+func createWork(siad *Client, workChannels []chan *MiningWork, secondsOfWorkPerRequestedHeader int, globalItemSize int) {
 	var timeOfLastWork time.Time
 	var longChan chan []byte
 
@@ -107,11 +103,10 @@ func submitSolutions(siad HeaderReporter, solutionChannel chan []byte) {
 
 func main() {
 	printVersion := flag.Bool("v", false, "Show version and exit")
-	flag.IntVar(&intensity, "I", intensity, "Intensity")
-	siadHost := flag.String("H", "localhost:9980", "host and port")
+    pool := flag.String("p", "us-east1.ethereum.miningpoolhub.com:20536", "pool host:port")
 //	secondsOfWorkPerRequestedHeader := flag.Int("S", 10, "Time between calls to siad")
-	excludedGPUs := flag.String("E", "", "Exclude GPU's: comma separated list of devicenumbers")
-	queryString := flag.String("A", "", "address or pool login")
+	excludedGPUs := flag.String("e", "", "exclude GPUs: comma separated list of devicenumbers")
+	queryString := flag.String("a", "0xeb9310b185455f863f526dab3d245809f6854b4d", "eth address or pool account")
 	flag.Parse()
 
 	if *printVersion {
@@ -119,9 +114,9 @@ func main() {
 		os.Exit(0)
 	}
 
-	siad := NewSiadClient(*siadHost, *queryString)
+	siad := NewClient(*pool, *queryString)
 
-	globalItemSize := int(math.Exp2(float64(intensity)))
+	globalItemSize := 32768
 
     rand.Seed(time.Now().UnixNano())
 

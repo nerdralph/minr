@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"time"
+    "math/rand"
 
 	"github.com/robvanmieghem/go-opencl/cl"
 )
@@ -23,7 +24,6 @@ type MiningWork struct {
 type Miner struct {
 	clDevice          *cl.Device
 	minerID           int
-	minerCount        int
 	hashRateReports   chan *HashRateReport
 	miningWorkChannel chan *MiningWork
 	solutionChannel   chan []byte
@@ -31,7 +31,8 @@ type Miner struct {
 }
 
 func (miner *Miner) mine() {
-	log.Println(miner.minerID, "- Initializing", miner.clDevice.Type(), "-", miner.clDevice.Name())
+    // start with random nonce
+    nonce := uint64(rand.Int63())
 
 	context, err := cl.CreateContext([]*cl.Device{miner.clDevice})
 	if err != nil {
@@ -56,7 +57,7 @@ func (miner *Miner) mine() {
 		log.Fatalln(miner.minerID, "-", err)
 	}
 
-	kernel, err := program.CreateKernel("nonceGrind")
+	kernel, err := program.CreateKernel("search")
 	if err != nil {
 		log.Fatalln(miner.minerID, "-", err)
 	}
@@ -74,16 +75,12 @@ func (miner *Miner) mine() {
 		log.Fatalln(miner.minerID, "-", err)
 	}
 	defer nonceOutObj.Release()
-	kernel.SetArgBuffer(1, nonceOutObj)
+	kernel.SetArgs(blockHeaderObj, nonceOutObj)
 
-	localItemSize, err := kernel.WorkGroupSize(miner.clDevice)
-	if err != nil {
-		log.Fatalln(miner.minerID, "- WorkGroupSize failed -", err)
-	}
+	localItemSize := 64
+    globalItemSize := localItemSize * 8192
 
-	log.Println(miner.minerID, "- Global item size:", miner.GlobalItemSize, "(Intensity", intensity, ")", "- Local item size:", localItemSize)
-
-	log.Println(miner.minerID, "- Initialized ", miner.clDevice.Type(), "-", miner.clDevice.Name())
+	log.Println("GPU", miner.minerID, "Initialized ")
 
 	nonceOut := make([]byte, 8, 8)
 	if _, err = commandQueue.EnqueueWriteBufferByte(nonceOutObj, true, 0, nonceOut, nil); err != nil {
@@ -101,7 +98,7 @@ func (miner *Miner) mine() {
 				work, continueMining = <-miner.miningWorkChannel
 				log.Println(miner.minerID, "-", "Continuing")
 			} else {
-				work.Offset += uint64(miner.GlobalItemSize) * uint64(miner.minerCount)
+				work.Offset = nonce + uint64(miner.GlobalItemSize)
 			}
 		}
 		if !continueMining {
@@ -121,7 +118,7 @@ func (miner *Miner) mine() {
 		}
 
 		//Run the kernel
-		if _, err = commandQueue.EnqueueNDRangeKernel(kernel, []int{int(work.Offset)}, []int{miner.GlobalItemSize}, []int{localItemSize}, nil); err != nil {
+		if _, err = commandQueue.EnqueueNDRangeKernel(kernel, []int{int(work.Offset)}, []int{globalItemSize}, []int{localItemSize}, nil); err != nil {
 			log.Fatalln(miner.minerID, "-", err)
 		}
 		//Get output

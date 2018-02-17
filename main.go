@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -14,10 +15,9 @@ import (
 )
 
 //Version is the released version string of gominer
-var Version = "0.0.0"
+const Version = "0.0.0"
 
 var intensity = 28
-var devicesTypesForMining = cl.DeviceTypeGPU
 
 func getHeader(siad *SiadClient, longpoll bool) (header []byte, err error) {
 	target, header, err := siad.GetHeaderForWork(longpoll)
@@ -123,39 +123,40 @@ func main() {
 
 	globalItemSize := int(math.Exp2(float64(intensity)))
 
+    rand.Seed(time.Now().UnixNano())
+
 	platforms, err := cl.GetPlatforms()
-	if err != nil {
-		log.Panic(err)
+	if len(platforms) == 0 {
+		log.Println("No OpenCL Platforms found.", err)
+		os.Exit(1)
 	}
 
 	clDevices := make([]*cl.Device, 0, 4)
 	for _, platform := range platforms {
-		log.Println("Platform", platform.Name())
-		platormDevices, err := cl.GetDevices(platform, devicesTypesForMining)
+		platormDevices, err := cl.GetDevices(platform, cl.DeviceTypeGPU)
 		if err != nil {
 			log.Println(err)
 		}
-		log.Println(len(platormDevices), "device(s) found:")
 		for i, device := range platormDevices {
-			log.Println(i, "-", device.Type(), "-", device.Name())
+			log.Println("GPU", i, device.Name(), device.MaxComputeUnits())
 			clDevices = append(clDevices, device)
 		}
 	}
 
-	nrOfMiningDevices := len(clDevices)
-
-	if nrOfMiningDevices == 0 {
-		log.Println("No suitable opencl devices found")
+	numDevices := len(clDevices)
+	if numDevices == 0 {
+		log.Println("No opencl GPU devices found")
 		os.Exit(1)
 	}
 
-	solutionChannel := make(chan []byte, nrOfMiningDevices*4)
+    // a channel buffer size of 2 is probably enough, but use more
+	solutionChannel := make(chan []byte, numDevices)
 	go submitSolutions(siad, solutionChannel)
 
 	workChannels := make([]chan *MiningWork, 0)
 
 	//Start mining routines
-	var hashRateReportsChannel = make(chan *HashRateReport, nrOfMiningDevices*10)
+	var hashRateReportsChannel = make(chan *HashRateReport, numDevices*4)
 	for i, device := range clDevices {
 		if deviceExcludedForMining(i, *excludedGPUs) {
 			continue
@@ -165,7 +166,6 @@ func main() {
 		miner := &Miner{
 			clDevice:          device,
 			minerID:           i,
-			minerCount:        nrOfMiningDevices,
 			hashRateReports:   hashRateReportsChannel,
 			miningWorkChannel: workChannel,
 			solutionChannel:   solutionChannel,
@@ -178,10 +178,10 @@ func main() {
 	go createWork(siad, workChannels, 1, globalItemSize)
 
 	//Start printing out the hashrates of the different gpu's
-	hashRateReports := make([]float64, nrOfMiningDevices)
+	hashRateReports := make([]float64, numDevices)
 	for {
 		//No need to print at every hashreport, we have time
-		for i := 0; i < nrOfMiningDevices; i++ {
+		for i := 0; i < numDevices; i++ {
 			report := <-hashRateReportsChannel
 			hashRateReports[report.MinerID] = report.HashRate
 		}

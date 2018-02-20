@@ -24,7 +24,7 @@ type MiningWork struct {
 type Miner struct {
 	clDevice          *cl.Device
 	minerID           int
-	hashRateReports   chan *HashRateReport
+    pool              *Client 
 	miningWorkChannel chan *MiningWork
 	solutionChannel   chan []byte
 	GlobalItemSize    int

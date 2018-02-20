@@ -5,28 +5,64 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"net/http"
+	"net"
 	"strings"
 	"time"
 )
 
-//HeaderReporter defines the required method a SIA client or pool client should implement for miners to be able to report solved headers
 type HeaderReporter interface {
 	//SubmitHeader reports a solved header
-	SubmitHeader(header []byte) (err error)
+	Submit(header []byte) (err error)
 }
 
-// SiadClient is used to connect to siad
-type SiadClient struct {
-	siadurl string
-	LongPollSupport bool
+// Client is used to connect to siad
+type Client struct {
+	pool string
+	account string
+    miners []*Miner
+    conn net.Conn
 }
 
-// NewSiadClient creates a new SiadClient given a 'host:port' connectionstring
-func NewSiadClient(connectionstring string, querystring string) *SiadClient {
-	s := SiadClient{}
-	s.siadurl = "http://" + connectionstring + "/miner/header?" + querystring
-	return &s
+type jhdr struct {
+    Id int32 `json:"id"`
+    Jsonrpc string `json:"jsonrpc"`
+}
+type jbody struct {
+    Method string `json:"method"`
+    Params []string `json:"params"`
+}
+type jmsg struct{
+    jhdr
+    jbody
+}
+
+func (pool *Client) Monitor() (error) {
+    var err error
+    conn, err := net.Dial("tcp", pool)
+    defer conn.Close()
+    if err!= nil { return err)
+
+    params := []string{account}
+    msg := jmsg{1, "2.0", "eth_submitLogin", params}
+    data, _ := json.Marshal(msg)
+    conn.Write(data)
+
+    const bufSize = 2048
+    buf := make([]byte, bufSize)
+    response := jhdr{}
+    // handle incoming json messages
+    for true { 
+        buf = buf[:bufSize]
+        n, _ := conn.Read(buf)
+        buf = buf[:n]
+        jerr = json.Unmarshal(buf, &response)
+        if jerr != nil { fmt.Println(jerr) }
+
+        if response.Id != 0 { continue }
+        var rcvd struct{Result []string `json:"result"`}
+        jerr = json.Unmarshal(buf, &rcvd)
+        if jerr != nil { fmt.Println(jerr) }
+    }
 }
 
 func decodeMessage(resp *http.Response) (msg string, err error) {
@@ -42,7 +78,7 @@ func decodeMessage(resp *http.Response) (msg string, err error) {
 }
 
 //GetHeaderForWork fetches new work from the SIA daemon
-func (sc *SiadClient) GetHeaderForWork(longpoll bool) (target, header []byte, err error) {
+func (sc *Client) GetHeaderForWork(longpoll bool) (target, header []byte, err error) {
 	timeout := time.Second * 10
 	if longpoll {
 		timeout = time.Minute * 60
@@ -60,12 +96,6 @@ func (sc *SiadClient) GetHeaderForWork(longpoll bool) (target, header []byte, er
 		return
 	}
 
-	req.Header.Add("User-Agent", "Sia-Agent")
-	resp, err := client.Do(req)
-	if err != nil {
-		sc.LongPollSupport = false
-		return
-	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
 	case 200:
@@ -96,14 +126,13 @@ func (sc *SiadClient) GetHeaderForWork(longpoll bool) (target, header []byte, er
 
 	xme := resp.Header.Get("X-Mining-Extensions")
 	if strings.Contains(xme, "longpoll") {
-		sc.LongPollSupport = true
 	}
 
 	return
 }
 
 //SubmitHeader reports a solved header to the SIA daemon
-func (sc *SiadClient) SubmitHeader(header []byte) (err error) {
+func (sc *Client) SubmitHeader(header []byte) (err error) {
 	req, err := http.NewRequest("POST", sc.siadurl, bytes.NewReader(header))
 	if err != nil {
 		return

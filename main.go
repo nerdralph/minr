@@ -4,97 +4,21 @@ import (
 	"flag"
 	"fmt"
 	"log"
+    "math/rand"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-
 	"github.com/robvanmieghem/go-opencl/cl"
 )
 
 //Version is the released version string of gominer
 const Version = "0.0.0"
 
-func getHeader(siad *Client, longpoll bool) (header []byte, err error) {
-	target, header, err := siad.GetHeaderForWork(longpoll)
-	if err != nil {
-		log.Println("ERROR fetching work -", err)
-	} else {
-		//copy target to header
-		for i := 0; i < 8; i++ {
-			header = append(header, target[7-i])
-		}
-	}
-	return
-}
-
-func startLongPolling(siad *Client) (c chan []byte) {
-	c = make(chan []byte)
-	go func () {
-		for {
-			header, err := getHeader(siad, true)
-			if err != nil {
-				break
-			}
-			c <- header
-		}
-		close(c)
-	} ()
-	return
-}
-
-func createWork(siad *Client, workChannels []chan *MiningWork, secondsOfWorkPerRequestedHeader int, globalItemSize int) {
-	var timeOfLastWork time.Time
-	var longChan chan []byte
-
-	for {
-		var header []byte
-		var err error
-
-		waitDuration := time.Second * time.Duration(secondsOfWorkPerRequestedHeader)
-		// If long polling is enabled, request work less often
-		if longChan != nil {
-			waitDuration = time.Second * time.Duration(60)
-		}
-		if time.Since(timeOfLastWork) > waitDuration {
-			header, err = getHeader(siad, false)
-			if err != nil {
-				time.Sleep(3 * time.Second)
-				continue
-			}
-			log.Println("Fetched new work")
-		} else {
-			if siad.LongPollSupport && longChan == nil {
-				log.Println("Starting long polling")
-				longChan = startLongPolling(siad)
-			}
-			select {
-			case header = <-longChan:
-				if header == nil {
-					longChan = nil
-					continue
-				}
-				log.Println("Long polling pushed new work")
-			case <-time.After(waitDuration - time.Since(timeOfLastWork)):
-				continue
-			}
-		}
-		timeOfLastWork = time.Now()
-
-		// Replace any old work with the new one
-		for i, c := range workChannels {
-			select {
-			case <-c:
-			default:
-			}
-			c <- &MiningWork{header, uint64(i * globalItemSize)}
-		}
-	}
-}
-
-func submitSolutions(siad HeaderReporter, solutionChannel chan []byte) {
+// pool Client
+func submitSolutions(pool HeaderReporter, solutionChannel chan []byte) {
 	for header := range solutionChannel {
-		if err := siad.SubmitHeader(header); err != nil {
+		if err := pool.SubmitHeader(header); err != nil {
 			log.Println("Error submitting solution -", err)
 		}
 		log.Println("Submitted header:", header)
@@ -103,8 +27,8 @@ func submitSolutions(siad HeaderReporter, solutionChannel chan []byte) {
 
 func main() {
 	printVersion := flag.Bool("v", false, "Show version and exit")
-    pool := flag.String("p", "us-east1.ethereum.miningpoolhub.com:20536", "pool host:port")
-//	secondsOfWorkPerRequestedHeader := flag.Int("S", 10, "Time between calls to siad")
+    host := flag.String("p", "us-east1.ethereum.miningpoolhub.com:20536", "pool host:port")
+//	secondsOfWorkPerRequestedHeader := flag.Int("S", 10, "Time between calls to pool")
 	excludedGPUs := flag.String("e", "", "exclude GPUs: comma separated list of devicenumbers")
 	queryString := flag.String("a", "0xeb9310b185455f863f526dab3d245809f6854b4d", "eth address or pool account")
 	flag.Parse()
@@ -114,10 +38,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	siad := NewClient(*pool, *queryString)
-
-	globalItemSize := 32768
-
     rand.Seed(time.Now().UnixNano())
 
 	platforms, err := cl.GetPlatforms()
@@ -126,7 +46,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	clDevices := make([]*cl.Device, 0, 4)
+	clDevices := make([]*cl.Device)
 	for _, platform := range platforms {
 		platormDevices, err := cl.GetDevices(platform, cl.DeviceTypeGPU)
 		if err != nil {
@@ -146,12 +66,12 @@ func main() {
 
     // a channel buffer size of 2 is probably enough, but use more
 	solutionChannel := make(chan []byte, numDevices)
-	go submitSolutions(siad, solutionChannel)
-
-	workChannels := make([]chan *MiningWork, 0)
+	go submitSolutions(pool, solutionChannel)
 
 	//Start mining routines
 	var hashRateReportsChannel = make(chan *HashRateReport, numDevices*4)
+	miners := make([]*Miner)
+	globalItemSize := 32768
 	for i, device := range clDevices {
 		if deviceExcludedForMining(i, *excludedGPUs) {
 			continue
@@ -166,11 +86,11 @@ func main() {
 			solutionChannel:   solutionChannel,
 			GlobalItemSize:    globalItemSize,
 		}
+        append(miners, miner)
 		go miner.mine()
 	}
 
-	//Start fetching work
-	go createWork(siad, workChannels, 1, globalItemSize)
+	pool := &Client{*host, *queryString, miners}
 
 	//Start printing out the hashrates of the different gpu's
 	hashRateReports := make([]float64, numDevices)

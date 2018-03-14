@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"github.com/robvanmieghem/go-opencl/cl"
+	"github.com/nerdralph/go-opencl/cl"
 )
 
 //Version is the released version string of gominer

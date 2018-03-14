@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-	"time"
+//	"time"
     "math/rand"
 
 	"github.com/robvanmieghem/go-opencl/cl"
@@ -14,20 +14,24 @@ type HashRateReport struct {
 	HashRate float64
 }
 
-//MiningWork is sent to the mining routines and defines what ranges should be searched for a matching nonce
 type MiningWork struct {
 	Header []byte
-	Offset uint64
+}
+
+type Solution struct {
+    Nonce uint64
+	Mix [32]byte
+	Header [32]byte
 }
 
 // Miner actually mines :-)
 type Miner struct {
 	clDevice          *cl.Device
+    work              *MiningWork
 	minerID           int
     pool              *Client 
-	miningWorkChannel chan *MiningWork
-	solutionChannel   chan []byte
 	GlobalItemSize    int
+    run               bool
 }
 
 func (miner *Miner) mine() {
@@ -35,46 +39,26 @@ func (miner *Miner) mine() {
     nonce := uint64(rand.Int63())
 
 	context, err := cl.CreateContext([]*cl.Device{miner.clDevice})
-	if err != nil {
-		log.Fatalln(miner.minerID, "-", err)
-	}
 	defer context.Release()
 
 	commandQueue, err := context.CreateCommandQueue(miner.clDevice, 0)
-	if err != nil {
-		log.Fatalln(miner.minerID, "-", err)
-	}
 	defer commandQueue.Release()
 
 	program, err := context.CreateProgramWithSource([]string{kernelSource})
-	if err != nil {
-		log.Fatalln(miner.minerID, "-", err)
-	}
+	if err != nil { log.Fatalln(miner.minerID, err) }
 	defer program.Release()
 
 	err = program.BuildProgram([]*cl.Device{miner.clDevice}, "")
-	if err != nil {
-		log.Fatalln(miner.minerID, "-", err)
-	}
+	if err != nil { log.Fatalln(miner.minerID, err) }
 
 	kernel, err := program.CreateKernel("search")
-	if err != nil {
-		log.Fatalln(miner.minerID, "-", err)
-	}
+	if err != nil { log.Fatalln(miner.minerID, "CreateKernel error:", err) }
 	defer kernel.Release()
 
-	blockHeaderObj, err := context.CreateEmptyBuffer(cl.MemReadOnly, 88)
-	if err != nil {
-		log.Fatalln(miner.minerID, "-", err)
-	}
-	defer blockHeaderObj.Release()
-	kernel.SetArgBuffer(0, blockHeaderObj)
-
 	nonceOutObj, err := context.CreateEmptyBuffer(cl.MemReadWrite, 8)
-	if err != nil {
-		log.Fatalln(miner.minerID, "-", err)
-	}
+	if err != nil { log.Fatalln(miner.minerID, "CreateBuffer error:", err) }
 	defer nonceOutObj.Release()
+
 	kernel.SetArgs(blockHeaderObj, nonceOutObj)
 
 	localItemSize := 64
@@ -84,41 +68,19 @@ func (miner *Miner) mine() {
 
 	nonceOut := make([]byte, 8, 8)
 	if _, err = commandQueue.EnqueueWriteBufferByte(nonceOutObj, true, 0, nonceOut, nil); err != nil {
-		log.Fatalln(miner.minerID, "-", err)
+		log.Fatalln(miner.minerID, "EnqueueWrite error", err)
 	}
-	var work *MiningWork
-	for {
-		start := time.Now()
-		continueMining := true
-		select {
-		case work, continueMining = <-miner.miningWorkChannel:
-		default:
-			if work == nil {
-				log.Println(miner.minerID, "-", "No work ready")
-				work, continueMining = <-miner.miningWorkChannel
-				log.Println(miner.minerID, "-", "Continuing")
-			} else {
-				work.Offset = nonce + uint64(miner.GlobalItemSize)
-			}
-		}
-		if !continueMining {
-			log.Println("Halting miner ", miner.minerID)
-			break
-		}
-		//Copy high 32 bits of Offset to Header, clear low 32 bits
-		for i := 0; i < 4; i++ {
-			work.Header[i+32] = 0
-		}
-		for i := 4; i < 8; i++ {
-			work.Header[i+32] = byte(work.Offset >> uint(i * 8))
-		}
+	for run {
+        //start := time.Now()
+        //work.Offset = nonce + uint64(miner.GlobalItemSize)
+
 		//Copy input to kernel args
 		if _, err = commandQueue.EnqueueWriteBufferByte(blockHeaderObj, true, 0, work.Header, nil); err != nil {
-			log.Fatalln(miner.minerID, "-", err)
+		    log.Fatalln(miner.minerID, "EnqueueWrite error", err)
 		}
 
 		//Run the kernel
-		if _, err = commandQueue.EnqueueNDRangeKernel(kernel, []int{int(work.Offset)}, []int{globalItemSize}, []int{localItemSize}, nil); err != nil {
+		if _, err = commandQueue.EnqueueNDRangeKernel(kernel, nil, []int{globalItemSize}, []int{localItemSize}, nil); err != nil {
 			log.Fatalln(miner.minerID, "-", err)
 		}
 		//Get output
@@ -126,17 +88,13 @@ func (miner *Miner) mine() {
 			log.Fatalln(miner.minerID, "-", err)
 		}
 		//Check if match found
-		if nonceOut[0] != 0 || nonceOut[1] != 0 || nonceOut[2] != 0 || nonceOut[3] != 0 || nonceOut[4] != 0 || nonceOut[5] != 0 || nonceOut[6] != 0 || nonceOut[7] != 0 {
-			log.Println(miner.minerID, "-", "Yay, solution found!", "-", "Offset:", work.Offset)
-			if nonceOut[0] == 0 {
-				log.Println(miner.minerID, "-", "Solution found with a nonce that started with 0...")
-			}
+		if nonceOut[0] {
+			log.Println(miner.minerID, "Solution found!" )
 			// Copy nonce to a new header.
 			header := append([]byte(nil), work.Header[:80]...)
 			for i := 0; i < 8; i++ {
 				header[i+32] = nonceOut[i]
 			}
-			miner.solutionChannel <- header
 
 			//Clear the output since it is dirty now
 			nonceOut = make([]byte, 8, 8)
@@ -144,9 +102,7 @@ func (miner *Miner) mine() {
 				log.Fatalln(miner.minerID, "-", err)
 			}
 		}
-
-		hashRate := float64(miner.GlobalItemSize) / (time.Since(start).Seconds() * 1000000)
-		miner.hashRateReports <- &HashRateReport{miner.minerID, hashRate}
+        // update hashrate
 	}
 
 }
